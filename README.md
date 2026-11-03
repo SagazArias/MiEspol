@@ -47,7 +47,6 @@ Para moverse a pie por un campus grande y caluroso no basta con la ruta más cor
 | Clima | API pública de Open-Meteo (sin clave) | — |
 | Build | EAS Build (perfiles `development`, `preview`, `production`, que generan APK) | CLI >= 16 |
 
-`react-native-maps` aparece en `package.json`, pero el mapa actual (`src/components/CampusMap.tsx`) se dibuja con Leaflet en un WebView.
 
 ## Arquitectura
 
@@ -146,11 +145,11 @@ eas build -p android --profile production   # APK de producción
 ### Regenerar los datos del campus
 
 ```bash
-node scripts/extract-kml.js          # KML -> buildings/paths GeoJSON
+node scripts/extract-kml.js [mapa.kml]   # KML -> buildings/paths GeoJSON
 node scripts/build-campus-graph.js   # GeoJSON -> graph.json y capas
 ```
 
-> `extract-kml.js` lee el KML desde una ruta local fija (`C:/Users/Sagaz/Downloads/Mapa ESPOL.kml`). Antes de ejecutarlo, cámbiala a `assets/campus/Mapa-ESPOL.kml`.
+> Sin argumentos, `extract-kml.js` usa `assets/campus/Mapa-ESPOL.kml`. Si pasas otro KML, lo procesa y lo copia a esa ruta.
 
 ## Estructura
 
@@ -179,7 +178,6 @@ Ubicación precisa y aproximada (rutas y validación de caminatas), cámara y le
 - Backend compartido para que obstáculos, votos y ranking sean reales entre usuarios, en lugar de vivir en AsyncStorage.
 - Valores de sombra, calor y estado medidos en campo, en vez de inferidos del nombre del tramo.
 - Mapa sin conexión, sin depender de las teselas de OSM ni de Leaflet desde unpkg.
-- Retirar `react-native-maps` si no se va a usar, o migrar el mapa a él.
 - Integrar los módulos de Mi ESPOL que hoy son marcadores.
 - Pruebas automatizadas del ruteo y de las reglas de incentivos.
 

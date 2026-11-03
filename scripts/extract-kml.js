@@ -1,6 +1,11 @@
 const fs = require('fs');
 
-const kml = fs.readFileSync('C:/Users/Sagaz/Downloads/Mapa ESPOL.kml', 'utf8');
+const path = require('path');
+
+// Uso: node scripts/extract-kml.js [ruta.kml]  (por defecto, el KML versionado en assets/campus)
+const DEST_KML = 'assets/campus/Mapa-ESPOL.kml';
+const srcKml = process.argv[2] || DEST_KML;
+const kml = fs.readFileSync(srcKml, 'utf8');
 
 function centroid(coords) {
   let sx = 0;
@@ -138,7 +143,7 @@ const lines = placemarks
   }));
 
 fs.mkdirSync('assets/campus', { recursive: true });
-fs.copyFileSync('C:/Users/Sagaz/Downloads/Mapa ESPOL.kml', 'assets/campus/Mapa-ESPOL.kml');
+if (path.resolve(srcKml) !== path.resolve(DEST_KML)) fs.copyFileSync(srcKml, DEST_KML);
 fs.writeFileSync(
   'assets/campus/extract-report.json',
   JSON.stringify({ destinations, folders, interesting }, null, 2)
