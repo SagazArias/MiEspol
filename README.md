@@ -2,6 +2,10 @@
 
 Prototipo de alta resolución, convertido en app Android, que extiende la experiencia de **Mi ESPOL** con tres módulos de movilidad dentro del campus Gustavo Galindo de la ESPOL (Guayaquil, Ecuador). Está hecho con **Expo + React Native + TypeScript**.
 
+[![CI](https://github.com/SagazArias/MiEspol/actions/workflows/ci.yml/badge.svg)](https://github.com/SagazArias/MiEspol/actions/workflows/ci.yml)
+
+> **Prototipo:** los reportes de obstáculos, los votos, los puntos y el ranking se guardan en el teléfono (AsyncStorage); todavía no hay un backend que los comparta entre usuarios.
+
 ## Problema
 
 Para moverse a pie por un campus grande y caluroso no basta con la ruta más corta: importan la sombra, el calor, el estado de los senderos y los obstáculos temporales, como obras o charcos. La app junta esa información en un solo lugar y además premia la movilidad activa.
@@ -70,20 +74,27 @@ App.tsx
 - **Datos** (`src/data`): grafo y capas del mapa (`campusMap.ts`), destinos, catálogo de ESPOL Shop y avisos.
 - **Componentes** (`src/components`): `CampusMap` (Leaflet en un WebView: usuario, destino y ruta) y `ModuleCard`.
 
-### Del KML al grafo del campus
+### El grafo del campus: OpenStreetMap + mapa propio
 
-Los datos del campus salen de un mapa propio en KML (`assets/campus/Mapa-ESPOL.kml`), procesado con dos scripts de Node:
+La red peatonal combina dos fuentes:
 
-1. **`scripts/extract-kml.js`** recorre los `<Placemark>` con expresiones regulares, extrae nombre, descripción y coordenadas, y separa polígonos (edificios) de líneas (senderos). Escribe `buildings.geojson`, `paths.geojson` y un reporte (`extract-report.json`) que relaciona cada destino con su placemark de origen (por ejemplo `1A - CTI`).
-2. **`scripts/build-campus-graph.js`**:
-   - Simplifica cada sendero y deja un punto cada ~35 m como nodo.
-   - Etiqueta cada tramo según su nombre en el KML: `⛔` lo marca como bloqueado, `⚠` como precaución, y *ciclovía / cubierto / pasarela* como cubierto. Con eso asigna `shade`, `heatExposure` y `pathCondition`.
-   - Conecta cada uno de los 14 destinos con los 3 nodos de sendero más cercanos.
-   - Escribe `graph.json`, con **155 nodos y 358 aristas**, además de `destinations.json`, `dest-buildings.geojson` y `map-layers.json`.
+- **OpenStreetMap** (`scripts/fetch-osm.js`): descarga con la API Overpass las vías caminables del campus y ~400 m alrededor (veredas, senderos, escaleras, calles y vías de servicio) y las guarda en `assets/campus/osm-campus.json`. Aporta la **topología real**: los cruces son nodos compartidos.
+- **Mapa propio en KML** (`assets/campus/Mapa-ESPOL.kml`, procesado por `scripts/extract-kml.js`): edificios, destinos y senderos anotados con conocimiento local. `⛔` marca un tramo bloqueado, `⚠` uno en precaución, y *ciclovía / cubierto / pasarela* uno cubierto.
+
+`scripts/build-campus-graph.js` las une:
+
+1. Parte cada vía de OSM en sus cruces y conserva un vértice cada ~20 m para dibujar la ruta. Asigna `shade`, `heatExposure` y `pathCondition` según el tipo de vía y la superficie: una vereda pavimentada es mejor que un sendero de tierra, y una avenida abierta es más calurosa.
+2. Los tramos de OSM que corren sobre un sendero del KML **heredan sus marcas**, para que una ruta no esquive un `⛔` pasando por el duplicado de OSM. Los senderos del KML que OSM no tiene se agregan y se unen a la red.
+3. Conecta cada destino a la red, conserva solo la red conectada y **falla si algún destino queda fuera**.
+4. Escribe `graph.json` con **3 046 nodos y 3 538 tramos de doble sentido** (84 bloqueados y 90 cubiertos), además de `destinations.json`, `dest-buildings.geojson` y `map-layers.json`.
+
+![Rutas antes (línea recta) y ahora (por veredas y senderos), sobre OpenStreetMap](docs/capturas/rutas-antes-despues.webp)
+
+*Antes, el grafo hecho solo con el KML quedaba en 7 islas desconectadas y la mayoría de las rutas eran una línea recta (en rojo). Ahora todas siguen veredas y senderos reales.*
 
 ### Cálculo de la ruta (`routing.ts`)
 
-1. El usuario se agrega al grafo como un nodo temporal `__user__` y se une a los nodos más cercanos.
+1. El usuario se agrega al grafo como un nodo temporal `__user__` y se une al nodo más cercano de la red abierta. Si está parado sobre un sendero cerrado, la ruta arranca desde el punto abierto más cercano.
 2. Para cada uno de los 4 criterios se ejecuta **Dijkstra**. El costo de una arista es su distancia multiplicada por factores del clima actual:
 
 | Criterio | Costo (simplificado) |
@@ -94,7 +105,7 @@ Los datos del campus salen de un mapa propio en KML (`assets/campus/Mapa-ESPOL.k
 | Mejor estado | `distancia × (1.4 − 0.7·estado ± lluvia según si está cubierto)` |
 
    Aquí `calor = (T − 26 °C)/10`, `UV = (índice − 5)/6` y `lluvia = probabilidad/100`. Las aristas bloqueadas, ya sea en el KML o por obstáculos activos, tienen costo infinito.
-3. Si un criterio no encuentra camino, la opción aparece como bloqueada. `recalculateFromGps` repite el cálculo durante la navegación y conserva el criterio elegido si sigue disponible.
+3. Dijkstra usa un montículo binario y el grafo se indexa una sola vez: las 4 rutas se calculan en ~3 ms. Solo si los obstáculos cortan todos los caminos se usa una línea recta de respaldo, con un aviso. Si un criterio no encuentra camino, la opción aparece como bloqueada. `recalculateFromGps` repite el cálculo durante la navegación y conserva el criterio elegido si sigue disponible.
 
 ### Destinos (14)
 
@@ -145,9 +156,20 @@ eas build -p android --profile production   # APK de producción
 ### Regenerar los datos del campus
 
 ```bash
+node scripts/fetch-osm.js                # OpenStreetMap -> assets/campus/osm-campus.json
 node scripts/extract-kml.js [mapa.kml]   # KML -> buildings/paths GeoJSON
-node scripts/build-campus-graph.js   # GeoJSON -> graph.json y capas
+node scripts/build-campus-graph.js       # OSM + KML -> graph.json y capas
+npx tsx scripts/route-audit.ts           # auditoría: rutas en línea recta y tiempo de cálculo
 ```
+
+### Pruebas
+
+```bash
+npm test          # Dijkstra, las 4 opciones, obstáculos, tramos ⛔ y conectividad de los 14 destinos
+npm run typecheck
+```
+
+El CI de GitHub Actions corre ambas en cada push y en cada PR.
 
 > Sin argumentos, `extract-kml.js` usa `assets/campus/Mapa-ESPOL.kml`. Si pasas otro KML, lo procesa y lo copia a esa ruta.
 
@@ -157,8 +179,8 @@ node scripts/build-campus-graph.js   # GeoJSON -> graph.json y capas
 ├── App.tsx                 # Navegación (stack + tabs)
 ├── index.ts                # Punto de entrada
 ├── app.json / eas.json     # Configuración Expo y EAS (package ec.edu.espol.campusinteligente)
-├── assets/campus/          # KML, GeoJSON, graph.json, destinos, capas
-├── scripts/                # extract-kml.js, build-campus-graph.js
+├── assets/campus/          # KML, datos de OSM, GeoJSON, graph.json, destinos, capas
+├── scripts/                # fetch-osm.js, extract-kml.js, build-campus-graph.js, route-audit.ts
 └── src/
     ├── components/         # CampusMap (Leaflet/WebView), ModuleCard
     ├── data/               # campusMap, destinations, espolShop, notices
@@ -179,8 +201,10 @@ Ubicación precisa y aproximada (rutas y validación de caminatas), cámara y le
 - Valores de sombra, calor y estado medidos en campo, en vez de inferidos del nombre del tramo.
 - Mapa sin conexión, sin depender de las teselas de OSM ni de Leaflet desde unpkg.
 - Integrar los módulos de Mi ESPOL que hoy son marcadores.
-- Pruebas automatizadas del ruteo y de las reglas de incentivos.
+- Pruebas de las reglas de incentivos (las del ruteo ya existen).
 
 ## Licencia
 
 Ver [LICENSE](LICENSE) (MIT).
+
+Los datos de la red peatonal (`assets/campus/osm-campus.json` y lo que se deriva en `graph.json`) son © colaboradores de [OpenStreetMap](https://www.openstreetmap.org/copyright), bajo licencia ODbL 1.0.

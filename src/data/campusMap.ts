@@ -21,10 +21,17 @@ export type GraphEdge = {
   blocked: boolean;
 };
 
-export const campusGraph = graph as {
+type StoredGraph = {
   destinations: { id: string; name: string; lat: number; lng: number }[];
   nodes: GraphNode[];
   edges: GraphEdge[];
+};
+
+// graph.json guarda cada tramo una sola vez (todos son de doble sentido): aquí se agrega el sentido inverso.
+const stored = graph as StoredGraph;
+export const campusGraph: StoredGraph = {
+  ...stored,
+  edges: stored.edges.flatMap((e) => [e, { ...e, id: `${e.to}__${e.from}`, from: e.to, to: e.from }]),
 };
 
 export const campusMapLayers = mapLayers as {

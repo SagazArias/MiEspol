@@ -102,8 +102,31 @@ describe('computeRouteOptionsFromGps', () => {
     }
   });
 
-  it('un destino sin conexión en el grafo (CTI) igual tiene ruta, por el respaldo en línea recta', () => {
-    const [fastest] = computeRouteOptionsFromGps(user, 'cti', calm, []);
+  it('todos los destinos se alcanzan por senderos desde cualquier punto de la red, sin línea recta', () => {
+    const starts = campusGraph.nodes.filter((n, i) => n.kind === 'path' && i % 150 === 0);
+    for (const d of campusGraph.destinations) {
+      for (const s of starts) {
+        for (const o of computeRouteOptionsFromGps({ lat: s.lat, lng: s.lng }, d.id, calm, [])) {
+          assert.ok(!o.edgeIds.includes('user__direct__dest'), `${o.kind} desde ${s.id} hacia ${d.id} usó la línea recta`);
+        }
+      }
+    }
+  });
+
+  it('ninguna ruta pasa por un tramo marcado ⛔ en el KML', () => {
+    const blockedIds = new Set(campusGraph.edges.filter((e) => e.blocked).map((e) => e.id));
+    assert.ok(blockedIds.size > 0, 'el grafo debería tener tramos bloqueados del KML');
+    for (const d of campusGraph.destinations) {
+      for (const o of computeRouteOptionsFromGps(user, d.id, calm, [])) {
+        assert.ok(!o.edgeIds.some((id) => blockedIds.has(id)), `${o.kind} hacia ${d.id} cruza un tramo bloqueado`);
+      }
+    }
+  });
+
+  it('si los obstáculos cortan todos los accesos a un destino, usa la línea recta y lo avisa', () => {
+    const cti = campusGraph.destinations.find((d) => d.id === 'cti')!;
+    const cerco = obstacle({ lat: cti.lat, lng: cti.lng, severity: 'high' });
+    const [fastest] = computeRouteOptionsFromGps(user, 'cti', calm, [cerco]);
     assert.equal(fastest.blocked, false);
     assert.ok(fastest.edgeIds.includes('user__direct__dest'));
     assert.ok(fastest.warnings.includes('Usando aproximación directa por el campus'));

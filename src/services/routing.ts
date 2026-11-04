@@ -1,6 +1,6 @@
 import { campusGraph, type GraphEdge, type GraphNode } from '../data/campusMap';
 import { haversineM } from './geo';
-import { obstacleBlocksEdge, type Obstacle } from './obstacleRules';
+import { blockedEdgeIds, type Obstacle } from './obstacleRules';
 import type { WeatherSnapshot } from './weather';
 
 export type RouteOptionKind =
@@ -83,40 +83,101 @@ function nearestNodeId(
   return { node: best, dist: bestDist };
 }
 
+// Adyacencia del grafo estático, construida una sola vez.
+const baseAdj = new Map<string, GraphEdge[]>();
+for (const e of campusGraph.edges) {
+  if (!baseAdj.has(e.from)) baseAdj.set(e.from, []);
+  baseAdj.get(e.from)!.push(e);
+}
+
+// Nodos de la red abierta (sin tramos ⛔ del KML) conectada a los destinos. Si el usuario está parado sobre un
+// sendero cerrado, la ruta arranca desde el punto abierto más cercano en lugar de caer en la línea recta.
+const openNodes = (() => {
+  const seen = new Set([campusGraph.destinations[0].id]);
+  const queue = [campusGraph.destinations[0].id];
+  while (queue.length) {
+    for (const e of baseAdj.get(queue.shift()!) ?? []) {
+      if (!e.blocked && !seen.has(e.to)) {
+        seen.add(e.to);
+        queue.push(e.to);
+      }
+    }
+  }
+  return campusGraph.nodes.filter((n) => seen.has(n.id));
+})();
+
+/** Cola de prioridad mínima (montículo binario): O(log n) por operación. */
+class MinHeap {
+  private items: { id: string; cost: number }[] = [];
+  get size() {
+    return this.items.length;
+  }
+  push(item: { id: string; cost: number }) {
+    const a = this.items;
+    a.push(item);
+    let i = a.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (a[p].cost <= a[i].cost) break;
+      [a[p], a[i]] = [a[i], a[p]];
+      i = p;
+    }
+  }
+  pop() {
+    const a = this.items;
+    const top = a[0];
+    const last = a.pop()!;
+    if (a.length) {
+      a[0] = last;
+      let i = 0;
+      for (;;) {
+        const l = 2 * i + 1;
+        const r = l + 1;
+        let m = i;
+        if (l < a.length && a[l].cost < a[m].cost) m = l;
+        if (r < a.length && a[r].cost < a[m].cost) m = r;
+        if (m === i) break;
+        [a[m], a[i]] = [a[i], a[m]];
+        i = m;
+      }
+    }
+    return top;
+  }
+}
+
 function dijkstra(
   startId: string,
   endId: string,
   kind: RouteOptionKind,
   weather: WeatherSnapshot,
-  obstacles: Obstacle[],
+  blocked: Set<string>,
   extraEdges: GraphEdge[]
 ): { nodeIds: string[]; edgeIds: string[]; distanceM: number } | null {
-  const adj = new Map<string, GraphEdge[]>();
-  const push = (e: GraphEdge) => {
-    if (!adj.has(e.from)) adj.set(e.from, []);
-    adj.get(e.from)!.push(e);
-  };
-  for (const e of campusGraph.edges) push(e);
-  for (const e of extraEdges) push(e);
+  const extraAdj = new Map<string, GraphEdge[]>();
+  for (const e of extraEdges) {
+    if (!extraAdj.has(e.from)) extraAdj.set(e.from, []);
+    extraAdj.get(e.from)!.push(e);
+  }
 
   const dist = new Map<string, number>();
   const prev = new Map<string, { node: string; edge: GraphEdge } | null>();
   const walkDist = new Map<string, number>();
-  const pq: { id: string; cost: number }[] = [];
+  const pq = new MinHeap();
 
   dist.set(startId, 0);
   walkDist.set(startId, 0);
   prev.set(startId, null);
   pq.push({ id: startId, cost: 0 });
 
-  while (pq.length) {
-    pq.sort((a, b) => a.cost - b.cost);
-    const cur = pq.shift()!;
+  while (pq.size) {
+    const cur = pq.pop();
     if (cur.id === endId) break;
     if (cur.cost > (dist.get(cur.id) ?? Infinity)) continue;
 
-    for (const edge of adj.get(cur.id) ?? []) {
-      if (obstacleBlocksEdge(obstacles, edge.id) || edge.blocked) continue;
+    const out = baseAdj.get(cur.id) ?? [];
+    const extra = extraAdj.get(cur.id);
+    for (const edge of extra ? [...out, ...extra] : out) {
+      if (edge.blocked || blocked.has(edge.id)) continue;
       const cost = edgeCost(edge, kind, weather);
       if (!Number.isFinite(cost)) continue;
       const nextCost = cur.cost + cost;
@@ -177,7 +238,7 @@ export function computeRouteOptionsFromGps(
     { id: '__user__', lat: user.lat, lng: user.lng, kind: 'user' },
   ];
 
-  const nearest = nearestNodeId(campusGraph.nodes, user);
+  const nearest = nearestNodeId(openNodes, user);
   const extra: GraphEdge[] = [];
   if (nearest.node) {
     const dist = nearest.dist;
@@ -217,11 +278,12 @@ export function computeRouteOptionsFromGps(
   // La arista directa es solo un respaldo: si se ofrece siempre, su costo (1,15 × línea recta) le gana a
   // casi todos los senderos reales y la ruta termina siendo una recta que ignora sombra, calor y estado.
   const graphOnly = extra.filter((e) => e.id !== 'user__direct__dest');
+  const blocked = blockedEdgeIds(obstacles);
 
   return kinds.map((kind) => {
     const path =
-      dijkstra('__user__', toId, kind, weather, obstacles, graphOnly) ??
-      dijkstra('__user__', toId, kind, weather, obstacles, extra);
+      dijkstra('__user__', toId, kind, weather, blocked, graphOnly) ??
+      dijkstra('__user__', toId, kind, weather, blocked, extra);
     const warnings: string[] = [];
     if (!path) {
       return {
