@@ -43,24 +43,38 @@ export function resolveEdgeIdsForObstacle(lat: number, lng: number) {
   return edgesNearPoint(lat, lng);
 }
 
-export function obstacleBlocksEdge(obstacles: Obstacle[], edgeId: string) {
-  const nodeMap = new Map(campusGraph.nodes.map((n) => [n.id, n]));
-  const edge = campusGraph.edges.find((e) => e.id === edgeId);
-  if (!edge) {
-    return obstacles.some((o) => o.severity !== 'low' && o.edgeIds.includes(edgeId));
-  }
-  const a = nodeMap.get(edge.from);
-  const b = nodeMap.get(edge.to);
-  if (!a || !b) return false;
+// El grafo es estático: se indexa una sola vez (el grafo de OSM tiene miles de tramos).
+const nodeById = new Map(campusGraph.nodes.map((n) => [n.id, n]));
+const edgeById = new Map(campusGraph.edges.map((e) => [e.id, e]));
 
-  return obstacles.some((o) => {
-    if (o.severity === 'low') return false;
-    if ((o.noVotes ?? 0) >= 3) return false;
-    if (o.edgeIds.includes(edgeId)) return true;
-    return (
+/** Un obstáculo bloquea si es medio/alto y no tiene 3 votos de "ya no está". */
+function isActive(o: Obstacle) {
+  return o.severity !== 'low' && (o.noVotes ?? 0) < 3;
+}
+
+export function obstacleBlocksEdge(obstacles: Obstacle[], edgeId: string) {
+  const active = obstacles.filter(isActive);
+  if (!active.length) return false;
+  const edge = edgeById.get(edgeId);
+  if (!edge) return active.some((o) => o.edgeIds.includes(edgeId));
+  const a = nodeById.get(edge.from);
+  const b = nodeById.get(edge.to);
+  if (!a || !b) return false;
+  const mid = { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 };
+
+  return active.some(
+    (o) =>
+      o.edgeIds.includes(edgeId) ||
       haversineM(o, a) <= BLOCK_RADIUS_M ||
       haversineM(o, b) <= BLOCK_RADIUS_M ||
-      haversineM(o, { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 }) <= BLOCK_RADIUS_M
-    );
-  });
+      haversineM(o, mid) <= BLOCK_RADIUS_M,
+  );
+}
+
+/** Ids de todos los tramos del campus bloqueados por obstáculos: se calcula una vez por cálculo de rutas. */
+export function blockedEdgeIds(obstacles: Obstacle[]): Set<string> {
+  const blocked = new Set<string>();
+  if (!obstacles.some(isActive)) return blocked;
+  for (const e of campusGraph.edges) if (obstacleBlocksEdge(obstacles, e.id)) blocked.add(e.id);
+  return blocked;
 }
