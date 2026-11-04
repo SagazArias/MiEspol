@@ -1,27 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
-import { campusGraph } from '../data/campusMap';
-import { haversineM } from './location';
 
-export type ObstacleSeverity = 'low' | 'medium' | 'high';
-export type ObstacleSource = 'community' | 'admin';
-
-export type Obstacle = {
-  id: string;
-  title: string;
-  description: string;
-  category: string;
-  lat: number;
-  lng: number;
-  severity: ObstacleSeverity;
-  source: ObstacleSource;
-  edgeIds: string[];
-  photoUri?: string;
-  createdAt: string;
-  yesVotes: number;
-  noVotes: number;
-  localVoted?: 'yes' | 'no' | null;
-};
+export type { Obstacle, ObstacleSeverity, ObstacleSource } from './obstacleRules';
+export { obstacleBlocksEdge, resolveEdgeIdsForObstacle } from './obstacleRules';
+import type { Obstacle } from './obstacleRules';
 
 const KEY = 'campus_obstacles_v4';
 const VOTER_KEY = 'campus_obstacle_votes_v2';
@@ -195,43 +177,4 @@ export async function voteObstaclePermanence(
   next[idx] = item;
   await save(next);
   return { removed: false, obstacle: { ...item, localVoted: voteMap[id] } };
-}
-
-function edgesNearPoint(lat: number, lng: number, radiusM = 90) {
-  const nodeMap = new Map(campusGraph.nodes.map((n) => [n.id, n]));
-  return campusGraph.edges
-    .filter((e) => {
-      const a = nodeMap.get(e.from);
-      const b = nodeMap.get(e.to);
-      if (!a || !b) return false;
-      const d = Math.min(haversineM({ lat, lng }, a), haversineM({ lat, lng }, b));
-      return d <= radiusM;
-    })
-    .map((e) => e.id);
-}
-
-export function resolveEdgeIdsForObstacle(lat: number, lng: number) {
-  return edgesNearPoint(lat, lng);
-}
-
-export function obstacleBlocksEdge(obstacles: Obstacle[], edgeId: string) {
-  const nodeMap = new Map(campusGraph.nodes.map((n) => [n.id, n]));
-  const edge = campusGraph.edges.find((e) => e.id === edgeId);
-  if (!edge) {
-    return obstacles.some((o) => o.severity !== 'low' && o.edgeIds.includes(edgeId));
-  }
-  const a = nodeMap.get(edge.from);
-  const b = nodeMap.get(edge.to);
-  if (!a || !b) return false;
-
-  return obstacles.some((o) => {
-    if (o.severity === 'low') return false;
-    if ((o.noVotes ?? 0) >= 3) return false;
-    if (o.edgeIds.includes(edgeId)) return true;
-    return (
-      haversineM(o, a) <= 90 ||
-      haversineM(o, b) <= 90 ||
-      haversineM(o, { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 }) <= 90
-    );
-  });
 }
