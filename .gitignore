@@ -39,3 +39,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Credenciales de firma para EAS (contienen contraseñas)
+credentials.json
