@@ -56,6 +56,12 @@
           "cameraPermission": "Permite tomar fotos de obstáculos en el campus."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "af89d1ff-4977-4268-9d7a-af7fc4f2355d"
+      }
+    },
+    "owner": "sagaz_arias"
   }
 }
