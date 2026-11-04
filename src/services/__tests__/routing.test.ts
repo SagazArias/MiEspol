@@ -123,13 +123,21 @@ describe('computeRouteOptionsFromGps', () => {
     }
   });
 
-  it('si los obstáculos cortan todos los accesos a un destino, usa la línea recta y lo avisa', () => {
-    const cti = campusGraph.destinations.find((d) => d.id === 'cti')!;
-    const cerco = obstacle({ lat: cti.lat, lng: cti.lng, severity: 'high' });
-    const [fastest] = computeRouteOptionsFromGps(user, 'cti', calm, [cerco]);
-    assert.equal(fastest.blocked, false);
-    assert.ok(fastest.edgeIds.includes('user__direct__dest'));
-    assert.ok(fastest.warnings.includes('Usando aproximación directa por el campus'));
+  it('si un obstáculo rodea un destino, llega por senderos y solo el último tramo es directo', () => {
+    for (const d of campusGraph.destinations) {
+      const cerco = obstacle({ lat: d.lat, lng: d.lng, severity: 'high' });
+      for (const o of computeRouteOptionsFromGps(user, d.id, calm, [cerco])) {
+        assert.equal(o.blocked, false);
+        assert.ok(!o.edgeIds.includes('user__direct__dest'), `${o.kind} hacia ${d.id} usó la línea recta completa`);
+        assert.equal(o.nodeIds.at(-1), d.id);
+        if (o.edgeIds.at(-1)!.includes('__approach__')) {
+          assert.ok(o.warnings.includes('El último tramo pasa por un obstáculo reportado'));
+          // El tramo directo arranca como mucho donde empieza la zona bloqueada, no desde lejos.
+          const from = campusGraph.nodes.find((n) => n.id === o.nodeIds.at(-2))!;
+          assert.ok(haversineM(from, d) < 400, `${d.id}: último tramo de ${Math.round(haversineM(from, d))} m`);
+        }
+      }
+    }
   });
 
   it('un destino inexistente no devuelve rutas', () => {
