@@ -111,6 +111,8 @@ async function loadRaw(): Promise<IncentivesState> {
   cache = raw
     ? { ...defaultState(), ...(JSON.parse(raw) as IncentivesState) }
     : defaultState();
+  // Nota creada por la versión con el bug de fechas ("Semana NaN-WNaN…"): se descarta.
+  if (cache.lastWeeklyRewardNote?.includes('NaN')) cache.lastWeeklyRewardNote = null;
   return cache;
 }
 
@@ -414,6 +416,8 @@ export async function markStreakActivity(): Promise<IncentivesState> {
   return state;
 }
 
+const VALID_WEEK_KEY = /^\d{4}-W\d{2}$/;
+
 async function rolloverIfNeeded(state: IncentivesState): Promise<IncentivesState> {
   let next = { ...state };
   const today = dateKeyGuayaquil();
@@ -435,7 +439,11 @@ async function rolloverIfNeeded(state: IncentivesState): Promise<IncentivesState
     }
   }
 
-  if (next.weekKey !== week) {
+  if (!VALID_WEEK_KEY.test(next.weekKey)) {
+    // Clave guardada por la versión con el bug de fechas en Hermes ("NaN-WNaN"): no es un cierre de
+    // semana real, así que solo se corrige la clave, sin premiar ni reiniciar el progreso.
+    next.weekKey = week;
+  } else if (next.weekKey !== week) {
     // premiar ranking de la semana que termina
     const rank = yourRank(next);
     const reward = rankingBracketReward(rank);
