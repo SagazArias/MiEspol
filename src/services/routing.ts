@@ -84,6 +84,7 @@ function nearestNodeId(
 }
 
 // Adyacencia del grafo estático, construida una sola vez.
+const nodeById = new Map(campusGraph.nodes.map((n) => [n.id, n]));
 const baseAdj = new Map<string, GraphEdge[]>();
 for (const e of campusGraph.edges) {
   if (!baseAdj.has(e.from)) baseAdj.set(e.from, []);
@@ -212,6 +213,49 @@ function dijkstra(
   };
 }
 
+/** Tramo directo desde el nodo alcanzable (sin cruzar bloqueos) más cercano al destino hasta el destino. */
+function approachEdge(
+  startId: string,
+  dest: GraphNode,
+  blocked: Set<string>,
+  extraEdges: GraphEdge[]
+): GraphEdge | null {
+  const seen = new Set([startId]);
+  const queue = [startId];
+  let best: GraphNode | null = null;
+  let bestDist = Infinity;
+  while (queue.length) {
+    const cur = queue.shift()!;
+    const node = nodeById.get(cur);
+    if (node && cur !== dest.id) {
+      const d = haversineM(node, dest);
+      if (d < bestDist) {
+        bestDist = d;
+        best = node;
+      }
+    }
+    const out = [...(baseAdj.get(cur) ?? []), ...extraEdges.filter((e) => e.from === cur)];
+    for (const e of out) {
+      if (e.blocked || blocked.has(e.id) || seen.has(e.to)) continue;
+      seen.add(e.to);
+      queue.push(e.to);
+    }
+  }
+  if (!best) return null;
+  return {
+    id: `${best.id}__approach__${dest.id}`,
+    from: best.id,
+    to: dest.id,
+    distanceM: bestDist,
+    name: 'último tramo hacia el destino',
+    shade: 0.45,
+    heatExposure: 0.55,
+    pathCondition: 0.7,
+    covered: false,
+    blocked: false,
+  };
+}
+
 function coordsForNodes(nodeIds: string[], liveNodes: GraphNode[]): LatLng[] {
   const map = new Map(liveNodes.map((n) => [n.id, n]));
   return nodeIds
@@ -280,9 +324,18 @@ export function computeRouteOptionsFromGps(
   const graphOnly = extra.filter((e) => e.id !== 'user__direct__dest');
   const blocked = blockedEdgeIds(obstacles);
 
+  // Si los obstáculos rodean el destino, se llega por senderos hasta el punto alcanzable más cercano a él y
+  // solo ese último tramo es directo, en vez de convertir toda la ruta en una línea recta.
+  let approach: GraphEdge | null | undefined;
+  const viaApproach = (kind: RouteOptionKind) => {
+    if (approach === undefined) approach = approachEdge('__user__', dest, blocked, graphOnly);
+    return approach ? dijkstra('__user__', toId, kind, weather, blocked, [...graphOnly, approach]) : null;
+  };
+
   return kinds.map((kind) => {
     const path =
       dijkstra('__user__', toId, kind, weather, blocked, graphOnly) ??
+      viaApproach(kind) ??
       dijkstra('__user__', toId, kind, weather, blocked, extra);
     const warnings: string[] = [];
     if (!path) {
@@ -304,6 +357,9 @@ export function computeRouteOptionsFromGps(
 
     if (path.edgeIds.includes('user__direct__dest')) {
       warnings.push('Usando aproximación directa por el campus');
+    }
+    if (approach && path.edgeIds.includes(approach.id)) {
+      warnings.push('El último tramo pasa por un obstáculo reportado');
     }
     if (weather.precipitationProbability >= 60) {
       warnings.push('Alta probabilidad de lluvia');
