@@ -1,7 +1,6 @@
 import { campusGraph, type GraphEdge, type GraphNode } from '../data/campusMap';
-import { haversineM } from './location';
-import type { Obstacle } from './obstacles';
-import { obstacleBlocksEdge } from './obstacles';
+import { haversineM } from './geo';
+import { obstacleBlocksEdge, type Obstacle } from './obstacleRules';
 import type { WeatherSnapshot } from './weather';
 
 export type RouteOptionKind =
@@ -215,8 +214,14 @@ export function computeRouteOptionsFromGps(
 
   const kinds: RouteOptionKind[] = ['fastest', 'most_shade', 'least_heat', 'best_path'];
 
+  // La arista directa es solo un respaldo: si se ofrece siempre, su costo (1,15 × línea recta) le gana a
+  // casi todos los senderos reales y la ruta termina siendo una recta que ignora sombra, calor y estado.
+  const graphOnly = extra.filter((e) => e.id !== 'user__direct__dest');
+
   return kinds.map((kind) => {
-    const path = dijkstra('__user__', toId, kind, weather, obstacles, extra);
+    const path =
+      dijkstra('__user__', toId, kind, weather, obstacles, graphOnly) ??
+      dijkstra('__user__', toId, kind, weather, obstacles, extra);
     const warnings: string[] = [];
     if (!path) {
       return {
