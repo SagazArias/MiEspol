@@ -1,10 +1,23 @@
 /** Utilidades de calendario America/Guayaquil para rachas, misiones y ranking. */
 
-const TZ = 'America/Guayaquil';
+/** Ecuador continental usa UTC−5 fijo, sin horario de verano desde 1993. */
+const GUAYAQUIL_OFFSET_MS = -5 * 60 * 60 * 1000;
 
-export function nowGuayaquil(): Date {
+/**
+ * Fecha cuyos campos locales (getDate, getHours…) son la hora de Guayaquil.
+ * Antes se hacía `new Date(new Date().toLocaleString('en-US', { timeZone }))`, pero Hermes (el motor de
+ * la app en Android) no interpreta ese texto y devolvía una fecha inválida: rachas, misiones y ranking
+ * quedaban con claves NaN. Aquí se calcula con aritmética, sin interpretar texto.
+ */
+export function nowGuayaquil(now: number = Date.now()): Date {
+  const g = new Date(now + GUAYAQUIL_OFFSET_MS);
   return new Date(
-    new Date().toLocaleString('en-US', { timeZone: TZ })
+    g.getUTCFullYear(),
+    g.getUTCMonth(),
+    g.getUTCDate(),
+    g.getUTCHours(),
+    g.getUTCMinutes(),
+    g.getUTCSeconds()
   );
 }
 
