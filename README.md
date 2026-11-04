@@ -6,6 +6,16 @@ Prototipo de alta resolución, convertido en app Android, que extiende la experi
 
 > **Prototipo:** los reportes de obstáculos, los votos, los puntos y el ranking se guardan en el teléfono (AsyncStorage); todavía no hay un backend que los comparta entre usuarios.
 
+| Inicio | Ruta Inteligente | Opciones de ruta |
+|---|---|---|
+| <img src="docs/capturas/inicio.webp" alt="Inicio con los módulos" width="220"> | <img src="docs/capturas/ruta-inteligente.webp" alt="Ruta hacia CTI por senderos, con el clima del campus" width="220"> | <img src="docs/capturas/opciones-ruta.webp" alt="Rutas por sombra, calor y estado" width="220"> |
+
+| Alertas y obstáculos | Incentivos | Ganadores |
+|---|---|---|
+| <img src="docs/capturas/alertas.webp" alt="Avisos y obstáculos con votación" width="220"> | <img src="docs/capturas/incentivos.webp" alt="Puntos, racha y clasificación semanal" width="220"> | <img src="docs/capturas/ganadores.webp" alt="Podio semanal y recompensas" width="220"> |
+
+*Capturas en un teléfono real (Android 16). Sin permiso de GPS, la app parte del centro del campus; los nombres del ranking son de demostración.*
+
 ## Problema
 
 Para moverse a pie por un campus grande y caluroso no basta con la ruta más corta: importan la sombra, el calor, el estado de los senderos y los obstáculos temporales, como obras o charcos. La app junta esa información en un solo lugar y además premia la movilidad activa.
