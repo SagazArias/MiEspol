@@ -115,7 +115,7 @@ La red peatonal combina dos fuentes:
 | Mejor estado | `distancia × (1.4 − 0.7·estado ± lluvia según si está cubierto)` |
 
    Aquí `calor = (T − 26 °C)/10`, `UV = (índice − 5)/6` y `lluvia = probabilidad/100`. Las aristas bloqueadas, ya sea en el KML o por obstáculos activos, tienen costo infinito.
-3. Dijkstra usa un montículo binario y el grafo se indexa una sola vez: las 4 rutas se calculan en ~3 ms. Solo si los obstáculos cortan todos los caminos se usa una línea recta de respaldo, con un aviso. Si un criterio no encuentra camino, la opción aparece como bloqueada. `recalculateFromGps` repite el cálculo durante la navegación y conserva el criterio elegido si sigue disponible.
+3. Dijkstra usa un montículo binario y el grafo se indexa una sola vez: las 4 rutas se calculan en ~3 ms. Si los obstáculos cortan todos los accesos a un destino, la ruta llega por senderos hasta el punto alcanzable más cercano y solo ese último tramo es directo, con el aviso "El último tramo pasa por un obstáculo reportado". La línea recta completa queda como último respaldo, también con aviso. Si un criterio no encuentra camino, la opción aparece como bloqueada. `recalculateFromGps` repite el cálculo durante la navegación y conserva el criterio elegido si sigue disponible.
 
 ### Destinos (14)
 
